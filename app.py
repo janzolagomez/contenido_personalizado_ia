@@ -31,14 +31,6 @@ if not gemini_api_key:
 
 genai.configure(api_key=gemini_api_key)
 model = genai.GenerativeModel('gemini-pro') # Puedes probar con otros modelos si están disponibles
-try:
-    st.write("Intentando conectar con la API de Gemini...")
-    for model in genai.list_models():
-        st.write(f"Modelo encontrado: {model.name}")
-    st.success("Conexión con la API de Gemini exitosa.")
-except Exception as e:
-    st.error(f"Error al conectar con la API de Gemini: {e}")
-
 
 # --- Definiciones Globales ---
 conceptos = ['FC_DEFINICION', 'FC_ROLES', 'FC_TECNOLOGIA', 'FC_APLICACION', 'FC_BENEFICIOS']
