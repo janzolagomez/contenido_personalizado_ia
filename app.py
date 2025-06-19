@@ -28,7 +28,8 @@ if not gemini_api_key:
     st.stop()
 
 genai.configure(api_key=gemini_api_key)
-model = genai.GenerativeModel("gemini-pro")  # Ajusta el modelo si es necesario
+# Inicializa el modelo con nombre explícito según versión recomendada
+model = genai.GenerativeModel(model_name="gemini-1.5-flash")
 
 # --- Definiciones Globales ---
 conceptos = [
@@ -43,6 +44,15 @@ nivel_map = {
     0.25: "Básico",
     0.55: "Intermedio",
     0.85: "Avanzado",
+}
+
+# Diccionario para nombres legibles de conceptos
+conceptos_legibles = {
+    "FC_DEFINICION": "la definición de Flipped Classroom",
+    "FC_ROLES": "los roles del estudiante y el docente en Flipped Classroom",
+    "FC_TECNOLOGIA": "la tecnología usada en Flipped Classroom",
+    "FC_APLICACION": "cómo aplicar Flipped Classroom",
+    "FC_BENEFICIOS": "los beneficios de Flipped Classroom",
 }
 
 # Cargar datos de estudiantes
@@ -105,39 +115,29 @@ def actualizar_niveles_desde_csv_examen(estudiantes_df_local, uploaded_file):
 
 @st.cache_data(show_spinner=False)
 def obtener_contenido_gemini(estudiante_id, concepto_id, nivel_dificultad_texto):
-    nombre_concepto_legible = {
-        "FC_DEFINICION": "la definición de Flipped Classroom",
-        "FC_ROLES": "los roles del estudiante y el docente en Flipped Classroom",
-        "FC_TECNOLOGIA": "la tecnología usada en Flipped Classroom",
-        "FC_APLICACION": "cómo aplicar Flipped Classroom",
-        "FC_BENEFICIOS": "los beneficios de Flipped Classroom",
-    }.get(concepto_id, concepto_id.replace("_", " ").replace("FC", "Flipped Classroom "))
+    nombre_concepto = conceptos_legibles.get(concepto_id, concepto_id)
+    prompt = f"""
+Eres un tutor educativo experto en la metodología Flipped Classroom.
+El estudiante con ID {estudiante_id} requiere contenido sobre **{nombre_concepto}**.
+El nivel de conocimiento del estudiante es **{nivel_dificultad_texto}**.
 
-    prompt = f"""Eres un tutor educativo experto en la metodología Flipped Classroom.
-Necesito contenido sobre **{nombre_concepto_legible}**.
-El estudiante tiene un nivel de conocimiento **{nivel_dificultad_texto}**.
-
-Por favor, proporciona el contenido siguiendo estas directrices:
-1.  **Explica el concepto** de manera clara y concisa, adecuada para el nivel {nivel_dificultad_texto}.
-2.  Incluye al menos **dos ejemplos prácticos** o escenarios de aplicación relevantes para este nivel.
-3.  El tono debe ser informativo, motivador y fácil de entender.
-4.  Formatea la respuesta usando Markdown, con encabezados claros y listas si es necesario.
-5.  Asegúrate de que el contenido sea directamente útil para un estudiante que está aprendiendo.
+Por favor, proporciona el contenido con estas instrucciones:
+1. Explica el concepto de manera clara, adaptada al nivel {nivel_dificultad_texto}.
+2. Incluye al menos dos ejemplos prácticos o escenarios relevantes.
+3. Usa un tono informativo y motivador.
+4. Formatea la respuesta en Markdown con encabezados y listas si es necesario.
+5. El contenido debe ser útil y directamente aplicable para un estudiante que está aprendiendo.
 """
 
     try:
-        with st.spinner(
-            f"Generando contenido para '{nombre_concepto_legible}' (Nivel: {nivel_dificultad_texto})..."
-        ):
-            response = model.generate(
-                prompt=prompt, temperature=0.7, max_output_tokens=512, top_p=0.8
-            )
+        with st.spinner(f"Generando contenido para '{nombre_concepto}' (Nivel: {nivel_dificultad_texto})..."):
+            response = model.generate_content(prompt)
             return response.text
     except Exception as e:
         st.error(
-            f"Error al generar contenido con Gemini para '{nombre_concepto_legible}': {e}. Por favor, inténtalo de nuevo más tarde."
+            f"Error al generar contenido con Gemini para '{nombre_concepto}': {e}. Por favor, inténtalo de nuevo más tarde."
         )
-        return f"No se pudo generar contenido dinámico para **{nombre_concepto_legible}**."
+        return f"No se pudo generar contenido dinámico para **{nombre_concepto}**."
 
 
 # --- Interfaz Streamlit ---
