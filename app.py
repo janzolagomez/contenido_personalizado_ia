@@ -129,10 +129,10 @@ Por favor, proporciona el contenido siguiendo estas directrices:
         with st.spinner(
             f"Generando contenido para '{nombre_concepto_legible}' (Nivel: {nivel_dificultad_texto})..."
         ):
-            response = model.generate_text(
+            response = model.generate(
                 prompt=prompt, temperature=0.7, max_output_tokens=512, top_p=0.8
             )
-            return response.result
+            return response.text
     except Exception as e:
         st.error(
             f"Error al generar contenido con Gemini para '{nombre_concepto_legible}': {e}. Por favor, inténtalo de nuevo más tarde."
