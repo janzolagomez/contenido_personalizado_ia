@@ -220,4 +220,7 @@ with st.form("actualizar_conocimiento_manual"):
             estudiantes_df.loc[idx, concepto_update] = nuevo_nivel
             estudiantes_df.to_csv("estudiantes.csv", index=False)
             st.success(
-                f"Nivel de conocimiento para **{concepto
+                f"Nivel de conocimiento para **{concepto_update}** actualizado a **{nivel_map[nuevo_nivel]}** para el estudiante ID {estudiante_id_update}."
+            )
+        else:
+            st.error("ID de estudiante no encontrado. No se pudo actualizar el nivel.")
