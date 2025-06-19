@@ -29,7 +29,7 @@ if not gemini_api_key:
 
 genai.configure(api_key=gemini_api_key)
 # Inicializa el modelo con nombre explícito según versión recomendada
-model = genai.GenerativeModel(model_name="gemini-2.0-flash")
+model = genai.GenerativeModel(model_name="gemini-2.0-flash-thinking-exp")
 
 # --- Definiciones Globales ---
 conceptos = [
