@@ -2,4 +2,6 @@ streamlit
 pandas
 altair
 google-generativeai
-pinecone-client
+pinecone # <--- Updated to this
+pdfplumber
+langchain
