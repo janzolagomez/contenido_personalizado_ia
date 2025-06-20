@@ -268,7 +268,7 @@ def obtener_contenido_gemini(estudiante_id, concepto_id, nivel_dificultad_texto)
     **INFORMACIÓN DE CONTEXTO RELEVANTE (de tus documentos):**
     {context_string}
 
-    **INSTRUCCIONES PARA CORARGENAR EL CONTENIDO:**
+    **INSTRUCCIONES PARA CREAR EL CONTENIDO PERSONALIZADO:**
     1. Explica claramente el concepto, **utilizando y refiriéndose a la "INFORMACIÓN DE CONTEXTO RELEVANTE" siempre que sea posible.**
     2. Adapta la complejidad del lenguaje al nivel **{nivel_dificultad_texto}** del estudiante.
     3. Incluye al menos dos ejemplos prácticos o escenarios relevantes relacionados con el método Flipped Classroom.
@@ -292,7 +292,7 @@ def obtener_contenido_gemini(estudiante_id, concepto_id, nivel_dificultad_texto)
     """
 
     try:
-        with st.spinner(f"Generando contenido con IA avanzada (RAG) para '{nombre_modelo}'..."):
+        with st.spinner(f"Generando contenido con IA avanzada (RAG) para '{nombre_concepto}'..."):
             response = model.generate_content(rag_prompt)
             generated_content = response.text
 
@@ -305,8 +305,8 @@ def obtener_contenido_gemini(estudiante_id, concepto_id, nivel_dificultad_texto)
                     generated_content += f"- {reference_apa}\n"
             return generated_content
     except Exception as e:
-        st.error(f"Error al generar contenido con Gemini (RAG) para '{nombre_concepto}'': '{e}'. Esto podría deberse a un problema con la API o al contenido.")
-        return f"No se pudo generar contenido dinámico basado en documentos para **{nombre_concepto}** Por favor, inténtalo de nuevo más tarde."
+        st.error(f"Error al generar contenido con Gemini (RAG) para '{nombre_concepto}': {e}. Esto podría deberse a un problema con la API o al contenido.")
+        return f"No se pudo generar contenido dinámico basado en documentos para **{nombre_concepto}**. Por favor, inténtalo de nuevo más tarde."
 
 
 # --- Interfaz Streamlit ---
