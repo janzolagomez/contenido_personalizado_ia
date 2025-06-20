@@ -211,8 +211,6 @@ def get_embedding(text, task_type="RETRIEVAL_QUERY", retries=3, delay=2):
 
 # Función principal para obtener contenido con RAG
 # Se ha eliminado @st.cache_data para asegurar que la función siempre use la configuración más reciente del modelo
-# Función principal para obtener contenido con RAG
-# Se ha eliminado @st.cache_data para asegurar que la función siempre use la configuración más reciente del modelo
 def obtener_contenido_gemini(estudiante_id, concepto_id, nivel_dificultad_texto):
     nombre_concepto = conceptos_legibles.get(concepto_id, concepto_id)
     # Define la "pregunta" que usaremos para buscar en Pinecone
