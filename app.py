@@ -211,27 +211,11 @@ def get_embedding(text, task_type="RETRIEVAL_QUERY", retries=3, delay=2):
 
 # Función principal para obtener contenido con RAG
 # Se ha eliminado @st.cache_data para asegurar que la función siempre use la configuración más reciente del modelo
-def obtener_contenido_gemini(estudiante_id: str, concepto_id: str, nivel_dificultad_texto: str) -> str:
-    """
-    Genera contenido educativo personalizado usando RAG para un concepto en el contexto de Flipped Classroom.
-    Incluye citas literales de fragmentos recuperados de Pinecone con formato APA.
-
-    Args:
-        estudiante_id (str): Identificador único del estudiante.
-        concepto_id (str): Identificador del concepto a explicar.
-        nivel_dificultad_texto (str): Nivel de dificultad (e.g., principiante, intermedio).
-
-    Returns:
-        str: Contenido en Markdown con explicación, citas literales, ejemplos y referencias APA.
-    """
-    # Validar entradas
-    if not all([estudiante_id, concepto_id, nivel_dificultad_texto]):
-        return "Error: Todos los parámetros son obligatorios."
-    if concepto_id not in conceptos_legibles:
-        return f"Error: El concepto '{concepto_id}' no está definido."
-
+# Función principal para obtener contenido con RAG
+# Se ha eliminado @st.cache_data para asegurar que la función siempre use la configuración más reciente del modelo
+def obtener_contenido_gemini(estudiante_id, concepto_id, nivel_dificultad_texto):
     nombre_concepto = conceptos_legibles.get(concepto_id, concepto_id)
-    # Define la consulta para buscar en Pinecone
+    # Define la "pregunta" que usaremos para buscar en Pinecone
     query_for_rag = f"Explica en detalle {nombre_concepto} para un nivel {nivel_dificultad_texto} en el contexto de Flipped Classroom."
 
     # 1. Generar el embedding de la pregunta
@@ -241,90 +225,90 @@ def obtener_contenido_gemini(estudiante_id: str, concepto_id: str, nivel_dificul
 
     # 2. Buscar en Pinecone para recuperar los fragmentos más relevantes
     context_chunks = []
-    relevant_citations = set()  # Usar un set para evitar citas duplicadas
+    relevant_citations = set() # Usar un set para almacenar tuplas (cite_apa, reference_apa) y evitar duplicados
 
     with st.spinner(f"Buscando información relevante en la base de conocimiento para '{nombre_concepto}'..."):
         try:
-            # Ajustar top_k según nivel de dificultad
-            top_k = 3 if nivel_dificultad_texto == "principiante" else 5
+            # top_k determina cuántos fragmentos recuperar. Ajusta según sea necesario.
             query_results = index.query(
                 vector=query_embedding,
-                top_k=top_k,
-                include_metadata=True
+                top_k=5, # Recupera los 5 fragmentos más similares
+                include_metadata=True # Asegúrate de obtener los metadatos que guardaste
             )
 
             for match in query_results.matches:
-                # Validar metadatos
+                # Recupera el texto original del fragmento y los metadatos de cita
+                # ¡IMPORTANTE!: Asegúrate de que el script de indexación guarde 'original_text'
+                # y los campos de cita en los metadatos del vector.
                 chunk_text = match.metadata.get("original_text", "")
                 source_filename = match.metadata.get("source_filename", "Desconocido")
-                if not chunk_text or not source_filename:
-                    st.warning(f"Fragmento sin texto o fuente válida: {match.id}")
-                    continue
 
-                context_chunks.append(chunk_text)
-                # Obtener citas APA
+                if chunk_text:
+                    context_chunks.append(chunk_text)
+
+                # Busca la información de cita usando el nombre del archivo fuente
+                # Fallback a los metadatos del match si el diccionario no tiene el archivo
                 cite_apa = citations_dict.get(source_filename, {}).get("cite_apa", match.metadata.get("cite_apa", "N/A"))
                 reference_apa = citations_dict.get(source_filename, {}).get("reference_apa", match.metadata.get("reference_apa", "N/A"))
+
                 if cite_apa != "N/A" and reference_apa != "N/A":
                     relevant_citations.add((cite_apa, reference_apa))
 
         except Exception as e:
-            st.error(f"Error al consultar Pinecone: {str(e)}. Detalles: {type(e).__name__}. Verifica la conexión y el índice.")
+            st.error(f"Error al consultar Pinecone: {e}. Revisa la conexión y el índice.")
             return f"No se pudo recuperar información de la base de conocimiento para **{nombre_concepto}**."
 
-    # 3. Construir el contexto para el prompt
-    context_string = "\n\n".join([f"Fragmento {i+1}: {chunk}" for i, chunk in enumerate(context_chunks)]) if context_chunks else "No se encontró información relevante en los documentos."
+    # 3. Construir el prompt para Gemini con el contexto recuperado
+    context_string = "\n\n".join(context_chunks) if context_chunks else "No se encontró información relevante en los documentos."
 
-    # 4. Prompt ajustado para incluir citas literales con formato APA
+    # Prompt detallado para el modelo Gemini, incluyendo el contexto RAG
     rag_prompt = f"""
     Eres un tutor educativo experto en la metodología Flipped Classroom.
     El estudiante con ID {estudiante_id} requiere contenido sobre **{nombre_concepto}**.
     El nivel de conocimiento del estudiante es **{nivel_dificultad_texto}**.
 
-    **INFORMACIÓN DE CONTEXTO RELEVANTE (de documentos recuperados):**
+    **INFORMACIÓN DE CONTEXTO RELEVANTE (de tus documentos):**
     {context_string}
 
-    **INSTRUCCIONES PARA GENERAR EL CONTENIDO:**
-    1. Explica el concepto de manera clara y concisa, **utilizando citas literales de los fragmentos proporcionados en "INFORMACIÓN DE CONTEXTO RELEVANTE"** cuando sea relevante.
-    2. Cada cita literal debe ir entre comillas y ser citada en el texto con el formato APA (Autor, Año).
-    3. Adapta la complejidad del lenguaje al nivel **{nivel_dificultad_texto}** del estudiante.
-    4. Incluye al menos dos ejemplos prácticos o escenarios relevantes relacionados con Flipped Classroom.
-    5. Usa un tono informativo, pedagógico y motivador.
-    6. Formatea la respuesta en Markdown con encabezados (##, ###), listas y negritas para mejorar la legibilidad.
-    7. Al final, añade una sección de "Referencias Bibliográficas" con las referencias APA completas de las fuentes citadas.
-
-    **Ejemplo de cita literal en el texto:**
-    Según Smith (2020), "Flipped Classroom permite a los estudiantes aprender a su propio ritmo" (p. 45).
+    **INSTRUCCIONES PARA CORARGENAR EL CONTENIDO:**
+    1. Explica claramente el concepto, **utilizando y refiriéndose a la "INFORMACIÓN DE CONTEXTO RELEVANTE" siempre que sea posible.**
+    2. Adapta la complejidad del lenguaje al nivel **{nivel_dificultad_texto}** del estudiante.
+    3. Incluye al menos dos ejemplos prácticos o escenarios relevantes relacionados con el método Flipped Classroom.
+    4. Usa un tono informativo, pedagógico y motivador.
+    5. Formatea la respuesta en Markdown con encabezados (##, ###), listas y negritas para mejorar la legibilidad.
+    6. **Si utilizaste información del contexto, cita las fuentes directamente en el texto** usando el formato (Autor, Año) o (Autor1 y Autor2, Año).
+    7. Al final de tu explicación, añade una sección de "Referencias Bibliográficas" con las referencias APA completas de las fuentes citadas.
 
     **Ejemplo de formato de respuesta:**
     ## La Definición de Flipped Classroom (Nivel: Intermedio)
 
-    El concepto de Flipped Classroom, o aula invertida, ... Según Smith (2020), "Flipped Classroom permite..." (p. 45).
+    El concepto de Flipped Classroom, o aula invertida, ... (según Smith, según2020).
 
     ### Ejemplos Prácticos
-    1. Un ejemplo ...
-    2. Otro escenario ...
+    1. Un ejemplo de ejemplo ...
+    2. Otro escenario de ejemplo...
 
     ---
     **Referencias Bibliográficas:**
-    - Smith, J. D. (2020). Título del Libro o "Artículo". Editorial/Revista.
+    - Smith, J. D. (2020). Título del Libro o Artículo. Editorial/Revista.
     """
 
     try:
-        with st.spinner(f"Generando contenido con IA avanzada (RAG) para '{nombre_concepto}'..."):
+        with st.spinner(f"Generando contenido con IA avanzada (RAG) para '{nombre_modelo}'..."):
             response = model.generate_content(rag_prompt)
             generated_content = response.text
 
-            # Añadir las referencias APA al final si hay citas
+            # Añadir las referencias APA al final de la respuesta si hay alguna
             if relevant_citations:
                 generated_content += "\n\n---\n**Referencias Bibliográficas:**\n"
+                # Ordenar las referencias para una presentación limpia
                 sorted_citations = sorted(list(relevant_citations), key=lambda x: x[0])
-                for _, ref_apa in sorted_citations:
-                    generated_content += f"- {ref_apa}\n"
+                for cite_apa, reference_apa in sorted_citations:
+                    generated_content += f"- {reference_apa}\n"
             return generated_content
     except Exception as e:
-        st.error(f"Error al generar contenido con Gemini (RAG) para '{nombre_concepto}': {str(e)}. Detalles: {type(e).__name__}.")
-        return f"No se pudo generar contenido dinámico basado en documentos para **{nombre_concepto}**. Por favor, inténtalo de nuevo más tarde."
+        st.error(f"Error al generar contenido con Gemini (RAG) para '{nombre_concepto}'': '{e}'. Esto podría deberse a un problema con la API o al contenido.")
+        return f"No se pudo generar contenido dinámico basado en documentos para **{nombre_concepto}** Por favor, inténtalo de nuevo más tarde."
 
 
 # --- Interfaz Streamlit ---
