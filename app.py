@@ -57,7 +57,7 @@ if not pinecone_api_key or not pinecone_environment:
 # Configurar Gemini
 genai.configure(api_key=gemini_api_key)
 # Considera usar 'gemini-pro' para la generación de texto de mayor calidad en RAG
-model = genai.GenerativeModel(model_name="gemini-1.5-pro-latest")
+model = genai.GenerativeModel(model_name="gemini-1.5-flash")
 EMBEDDING_MODEL = "models/embedding-001" # El mismo modelo que usaste para indexar
 
 # Inicializar Pinecone
