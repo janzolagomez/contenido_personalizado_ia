@@ -16,7 +16,7 @@ import os
 import time # Para reintentos en la generación de embeddings
 from pinecone import Pinecone # Importar Pinecone
 # Si vas a usar LangChain para dividir texto dentro de la app (no recomendado para este caso),
-# o si quieres mantener la coherencia de imports, pero no es estrictamente necesario aquí
+# o si quieres mantener la coherencia de imports, no es estrictamente necesario aquí
 # from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 # --- Configuración de la API de Gemini y Pinecone ---
@@ -56,8 +56,12 @@ if not pinecone_api_key or not pinecone_environment:
 
 # Configurar Gemini
 genai.configure(api_key=gemini_api_key)
-# Considera usar 'gemini-pro' para la generación de texto de mayor calidad en RAG
-model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+
+# CAMBIO IMPORTANTE AQUÍ: Gestionar la instancia del modelo con st.session_state
+if "gemini_model" not in st.session_state:
+    st.session_state.gemini_model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+model = st.session_state.gemini_model # Usar la instancia del modelo desde session_state
+
 EMBEDDING_MODEL = "models/embedding-001" # El mismo modelo que usaste para indexar
 
 # Inicializar Pinecone
@@ -206,7 +210,7 @@ def get_embedding(text, task_type="RETRIEVAL_QUERY", retries=3, delay=2):
 
 
 # Función principal para obtener contenido con RAG
-@st.cache_data(show_spinner=False)
+# Se ha eliminado @st.cache_data para asegurar que la función siempre use la configuración más reciente del modelo
 def obtener_contenido_gemini(estudiante_id, concepto_id, nivel_dificultad_texto):
     nombre_concepto = conceptos_legibles.get(concepto_id, concepto_id)
     # Define la "pregunta" que usaremos para buscar en Pinecone
