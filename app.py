@@ -63,9 +63,16 @@ EMBEDDING_MODEL = "models/embedding-001" # El mismo modelo que usaste para index
 # Inicializar Pinecone
 try:
     pc = Pinecone(api_key=pinecone_api_key, environment=pinecone_environment)
-    if pinecone_index_name not in pc.list_indexes():
-        st.error(f"Error: El índice de Pinecone '{pinecone_index_name}' no existe en tu entorno.")
+
+    # Obtenemos la lista de índices y extraemos solo sus nombres
+    existing_indexes_info = pc.list_indexes()
+    existing_index_names = [idx_info['name'] for idx_info in existing_indexes_info]
+
+    # Ahora sí, verificamos si el nombre del índice está en la lista de nombres
+    if pinecone_index_name not in existing_index_names:
+        st.error(f"Error: El índice de Pinecone '{pinecone_index_name}' no existe en tu entorno '{pinecone_environment}'. Por favor, verifica el nombre del índice o créalo.")
         st.stop()
+
     index = pc.Index(pinecone_index_name)
     st.success(f"Conexión a Pinecone establecida con el índice: **{pinecone_index_name}**.")
 except Exception as e:
