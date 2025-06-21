@@ -122,20 +122,22 @@ try:
     simplified_df = pd.read_csv(citation_data_path, encoding='latin1', delimiter=';')
     # Ajusta los nombres de las columnas según tu CSV si son diferentes
     simplified_df = simplified_df.rename(columns={
-        simplified_df.columns[0]: "filename",
+        simplified_df.columns[0]: "filename", # Asumimos que esta columna es el "cite_apa" corto o un ID que usaremos como clave
         simplified_df.columns[1]: "cite_apa",
         simplified_df.columns[2]: "reference_apa"
     })
     for _, row in simplified_df.iterrows():
-        file_name = str(row['filename']).strip()
-        citations_dict[file_name] = {
+        # Aquí, 'file_name' es el valor de la primera columna de tu CSV (ej. "Colomo-Magana et al., 2023")
+        # Es CRÍTICO que los valores de 'cite_apa' y 'reference_apa' también se almacenen en los metadatos de Pinecone
+        # con la clave exacta que usamos aquí ('cite_apa' y 'reference_apa').
+        file_key_from_csv = str(row['filename']).strip() # Usamos la primera columna como clave del diccionario.
+        citations_dict[file_key_from_csv] = {
             "cite_apa": str(row['cite_apa']).strip(),
             "reference_apa": str(row['reference_apa']).strip()
         }
     st.success("Metadatos de citas cargados exitosamente desde 'Fuentes Aula invertida.csv'.")
 except Exception as e:
     st.warning(f"No se pudieron cargar los metadatos de citas desde 'Fuentes Aula invertida.csv': {e}. Las citas pueden no aparecer en el contenido generado. Asegúrate de que el archivo existe y el formato es correcto (delimitador ';').")
-
 
 # --- Funciones Auxiliares ---
 def nota_a_nivel(nota):
@@ -224,6 +226,7 @@ def obtener_contenido_gemini(estudiante_id, concepto_id, nivel_dificultad_texto)
 
     # 2. Buscar en Pinecone para recuperar los fragmentos más relevantes
     context_chunks = []
+    # relevant_citations se poblará ahora directamente de los metadatos de Pinecone para los fragmentos utilizados
     relevant_citations = set() # Usar un set para almacenar tuplas (cite_apa, reference_apa) y evitar duplicados
 
     with st.spinner(f"Buscando información relevante en la base de conocimiento para '{nombre_concepto}'..."):
@@ -236,29 +239,21 @@ def obtener_contenido_gemini(estudiante_id, concepto_id, nivel_dificultad_texto)
 
             for match in query_results.matches:
                 chunk_text = match.metadata.get("original_text", "")
-                source_filename = match.metadata.get("source_filename", "Desconocido")
                 
-                # NORMALIZACIÓN DEL NOMBRE DE ARCHIVO PARA CITAS
-                # El filename de Pinecone puede incluir .pdf.pdf. Tu CSV no lo tiene.
-                # Ajustamos el filename de Pinecone para que coincida con la clave en citations_dict.
-                lookup_source_filename = source_filename
-                if lookup_source_filename.lower().endswith('.pdf.pdf'):
-                    lookup_source_filename = lookup_source_filename[:-4] # Elimina el doble .pdf
-                elif lookup_source_filename.lower().endswith('.pdf'):
-                    lookup_source_filename = lookup_source_filename[:-4] # Elimina un solo .pdf si solo hay uno (por si acaso)
+                # CRÍTICO: Obtener cite_apa y reference_apa DIRECTAMENTE de los metadatos de Pinecone.
+                # Esto ASUME que estos campos fueron almacenados correctamente durante la indexación
+                # (por ejemplo, en tu script de indexación, al hacer upsert, incluiste estos campos en 'metadata').
+                cite_apa = match.metadata.get("cite_apa", "N/A_CITA_NO_DISPONIBLE") 
+                reference_apa = match.metadata.get("reference_apa", "N/A_REFERENCIA_NO_DISPONIBLE")
 
-                # Busca la información de cita usando el nombre del archivo fuente normalizado
-                # Asegúrate de que citations_dict contenga las claves exactas que esperas aquí.
-                cite_apa = citations_dict.get(lookup_source_filename, {}).get("cite_apa", match.metadata.get("cite_apa", "N/A"))
-                reference_apa = citations_dict.get(lookup_source_filename, {}).get("reference_apa", match.metadata.get("reference_apa", "N/A"))
-
-                if chunk_text:
+                if chunk_text and cite_apa != "N/A_CITA_NO_DISPONIBLE":
                     # Incluir el texto del chunk Y su cita dentro del contexto que se le da a Gemini
-                    # Esto es clave para que Gemini "vea" qué cita va con qué texto.
                     context_chunks.append(f"FRAGMENTO: {chunk_text}\nCITA ASOCIADA: {cite_apa}\nREFERENCIA ASOCIADA: {reference_apa}")
-
-                if cite_apa != "N/A" and reference_apa != "N/A":
                     relevant_citations.add((cite_apa, reference_apa))
+                elif chunk_text:
+                    # Si no hay una cita APA válida desde Pinecone, aún incluye el fragmento
+                    # pero con una nota para que el modelo NO intente citarlo.
+                    context_chunks.append(f"FRAGMENTO: {chunk_text}\nNOTA: Este fragmento no tiene una referencia APA completa disponible en el sistema para ser citado, o la referencia asociada no fue correctamente almacenada en Pinecone.")
 
         except Exception as e:
             st.error(f"Error al consultar Pinecone: {e}. Revisa la conexión y el índice.")
@@ -266,33 +261,39 @@ def obtener_contenido_gemini(estudiante_id, concepto_id, nivel_dificultad_texto)
 
     # Determinar los parámetros de generación según el nivel de dificultad
     word_count_target = 0
-    citation_count_target = 0
     depth_instruction = ""
     example_count_instruction = ""
+    
+    # Usuario solicitó específicamente 3 citas para todos los niveles
+    citation_count_target = 3 
 
     if nivel_dificultad_texto == "Básico":
         word_count_target = 200
-        citation_count_target = 1
         depth_instruction = "Mantén la explicación sencilla, clara y directa, enfocándote en los fundamentos esenciales del concepto. Utiliza vocabulario fácil de entender."
         example_count_instruction = "1 ejemplo práctico."
     elif nivel_dificultad_texto == "Intermedio":
         word_count_target = 300
-        citation_count_target = 3
         depth_instruction = "Proporciona una explicación detallada, explorando conceptos clave y sus implicaciones. Introduce un nivel de detalle que facilite una comprensión más profunda sin abrumar."
         example_count_instruction = "2 ejemplos prácticos."
     elif nivel_dificultad_texto == "Avanzado":
         word_count_target = 380
-        citation_count_target = 5
         depth_instruction = "Ofrece una explicación profunda y exhaustiva, analizando matices, posibles desafíos, diferentes perspectivas o consideraciones avanzadas. Sintetiza información de múltiples fuentes del contexto para construir un argumento sólido y bien fundamentado."
         example_count_instruction = "3 ejemplos prácticos."
     
     # Construir la lista de referencias disponibles para Gemini
     available_references_string = ""
     if relevant_citations:
-        sorted_refs = sorted(list(relevant_citations), key=lambda x: x[0]) # Ordenar por cite_apa
-        available_references_string += "\n\n**REFERENCIAS DISPONIBLES PARA CITAR (ÚSALAS):**\n"
-        for cite, ref in sorted_refs:
-            available_references_string += f"- {ref} (Cita: {cite})\n"
+        # Asegurarse de que las referencias disponibles sean las que tienen cite_apa y reference_apa válidos
+        filtered_references = [(c, r) for c, r in relevant_citations if c != "N/A_CITA_NO_DISPONIBLE"]
+        if filtered_references:
+            sorted_refs = sorted(list(filtered_references), key=lambda x: x[0]) # Ordenar por cite_apa
+            available_references_string += "\n\n**REFERENCIAS DISPONIBLES PARA CITAR (ÚSALAS Y SOLO ESTAS):**\n"
+            for cite, ref in sorted_refs:
+                available_references_string += f"- {ref} (Cita: {cite})\n"
+        else:
+            available_references_string += "\n\n**No hay referencias válidas disponibles en el contexto para citar.**\n"
+    else:
+        available_references_string += "\n\n**No se encontraron fragmentos relevantes con referencias válidas en la base de conocimiento.**\n"
 
     # Construir el prompt para Gemini con el contexto recuperado
     context_string = "\n\n".join(context_chunks) if context_chunks else "No se encontró información relevante en los documentos."
@@ -315,9 +316,10 @@ def obtener_contenido_gemini(estudiante_id, concepto_id, nivel_dificultad_texto)
     3. Incluye al menos **{example_count_instruction}** o escenarios relevantes relacionados con el método Flipped Classroom, adecuados al nivel.
     4. Usa un tono informativo, pedagógico y motivador.
     5. Formatea la respuesta en Markdown con encabezados (##, ###), listas y negritas para mejorar la legibilidad.
-    6. **Cita las fuentes directamente en el texto** usando el formato (Autor, Año) o (Autor1 y Autor2, Año). **Es fundamental que cites al menos {citation_count_target} fuentes diferentes (si la información de contexto lo permite) de la "INFORMACIÓN DE CONTEXTO RELEVANTE".** Prioriza citar fuentes variadas para los niveles intermedio y avanzado.
-    7. **CRÍTICO: NO inventes ni añadas citas o referencias que NO estén explícitamente contenidas en la "INFORMACIÓN DE CONTEXTO RELEVANTE" o en la sección "REFERENCIAS DISPONIBLES PARA CITAR".** Si una afirmación no puede ser citada con la información proporcionada, reformula la afirmación para no requerir una cita, o elimina esa afirmación.
-    8. Al final de tu explicación, añade una sección de "Referencias Bibliográficas" y **lista SÓLO las referencias completas de las fuentes que CITASTE explícitamente en el texto, tomándolas directamente de la sección "REFERENCIAS DISPONIBLES PARA CITAR".**
+    6. **SOLO CITA FUENTES QUE TENGAN LA ETIQUETA "CITA ASOCIADA:" EN LA "INFORMACIÓN DE CONTEXTO RELEVANTE" O QUE APAREZCAN EN LA SECCIÓN "REFERENCIAS DISPONIBLES PARA CITAR".** Utiliza el formato (Autor, Año) o (Autor1 y Autor2, Año).
+    7. **CRÍTICO: BAJO NINGUNA CIRCUNSTANCIA INVENTES, MODIFIQUES O AÑADAS CITAS O REFERENCIAS QUE NO ESTÉN EXPLÍCITAMENTE Y EN SU TOTALIDAD DENTRO DE LA "INFORMACIÓN DE CONTEXTO RELEVANTE" O LA SECCIÓN "REFERENCIAS DISPONIBLES PARA CITAR".** Si un fragmento no tiene una "CITA ASOCIADA:" (o su referencia completa no está en "REFERENCIAS DISPONIBLES PARA CITAR"), **NO LO CITES**. Simplemente explica el contenido si es relevante, pero sin atribuirlo a una fuente que no existe en tu contexto.
+    8. Es fundamental que cites exactamente **{citation_count_target}** fuentes diferentes (si la "INFORMACIÓN DE CONTEXTO RELEVANTE" y "REFERENCIAS DISPONIBLES PARA CITAR" lo permiten y son suficientes). Si no hay suficientes fuentes válidas, cita las que haya, pero **NUNCA inventes.**
+    9. Al final de tu explicación, añade una sección de "Referencias Bibliográficas" y **LISTA ESTRICTAMENTE SÓLO LAS REFERENCIAS COMPLETAS QUE HAYAS CITADO EN EL TEXTO, TOMÁNDOLAS DIRECTAMENTE DE LA SECCIÓN "REFERENCIAS DISPONIBLES PARA CITAR".** No añadas otras referencias.
 
     **Ejemplo de formato de respuesta:**
     ## La Definición de Flipped Classroom (Nivel: Intermedio)
@@ -330,7 +332,7 @@ def obtener_contenido_gemini(estudiante_id, concepto_id, nivel_dificultad_texto)
 
     ---
     **Referencias Bibliográficas:**
-    - Masero-Moreno, A., & Morant, L. (2024). Título completo del documento de Masero-Moreno y Morant.
+    - Masero-Moreno, I. C., & Morant, G. A. (2024). Implementacion e influencia del modelo de clase invertida en el aprendizaje en linea de dos asignaturas universitarias. EDUCAR, 60(1), Article 1. https://doi.org/10.5565/rev/educar.1765
     """
 
     try:
@@ -341,8 +343,6 @@ def obtener_contenido_gemini(estudiante_id, concepto_id, nivel_dificultad_texto)
     except Exception as e:
         st.error(f"Error al generar contenido con Gemini (RAG) para '{nombre_concepto}': {e}. Esto podría deberse a un problema con la API o al contenido.")
         return f"No se pudo generar contenido dinámico basado en documentos para **{nombre_concepto}**. Por favor, inténtalo de nuevo más tarde."
-
-
 # --- Interfaz Streamlit ---
 
 st.set_page_config(layout="wide", page_title="Sistema de Aprendizaje Personalizado")
